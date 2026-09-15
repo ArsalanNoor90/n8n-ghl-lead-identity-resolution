@@ -79,7 +79,7 @@
           "parameters": [
             {
               "name": "Authorization",
-              "value": "Bearer pit-dbc64df7-8871-4604-958e-e43c1d13724e"
+              "value": "YOUR_GHL_PRIVATE_TOKEN_HERE"
             },
             {
               "name": "Version",
@@ -128,7 +128,7 @@
           "parameters": [
             {
               "name": "Authorization",
-              "value": "Bearer pit-dbc64df7-8871-4604-958e-e43c1d13724e"
+              "value": "YOUR_GHL_PRIVATE_TOKEN_HERE"
             },
             {
               "name": "Version",
@@ -265,7 +265,7 @@
           "parameters": [
             {
               "name": "Authorization",
-              "value": "Bearer pit-dbc64df7-8871-4604-958e-e43c1d13724e"
+              "value": "YOUR_GHL_PRIVATE_TOKEN_HERE"
             },
             {
               "name": "Version",
@@ -397,7 +397,7 @@
           "parameters": [
             {
               "name": "Authorization",
-              "value": "Bearer pit-dbc64df7-8871-4604-958e-e43c1d13724e"
+              "value": "YOUR_GHL_PRIVATE_TOKEN_HERE"
             },
             {
               "name": "Version",
