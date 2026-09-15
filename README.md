@@ -20,11 +20,23 @@ An automated end-to-end identity resolution engine built with n8n. It ingests in
 
 | Workflow Architecture | Dual GHL Search & Match Logic |
 | :---: | :---: |
-| ![n8n Workflow Canvas](docs/workflow-architecture.png) | ![Identity Match Logic](docs/identity-match-logic.png) |
+| ![n8n Workflow Canvas]
+(Screenshot 2026-09-15 204057.png
+Screenshot 2026-09-15 201134.png
+Screenshot 2026-09-15 194428.png
+) | ![Identity Match Logic]
+(Screenshot 2026-09-15 210509.png
+Screenshot 2026-09-15 205238.png
+Screenshot 2026-09-15 205059.png
+) |
 
 | Centralized Master Database |
 | :---: |
-| ![Google Sheets Master Database](docs/database-ledger.png) |
+| ![Google Sheets Master Database]
+(Screenshot 2026-09-16 010914.png
+Screenshot 2026-09-16 010854.png
+Screenshot 2026-09-16 010842.png
+) |
 
 ---
 
