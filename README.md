@@ -101,7 +101,8 @@ An automated end-to-end identity resolution engine built with n8n. It ingests in
 
 ## 🎬 Live Demo & Walkthrough
 
-> ### 🚀 [▶️ Watch Full Workflow Execution Demo]([YOUR_LINKEDIN_LOOM_POST_URL](https://lnkd.in/p/dKH3Y9ui))
+> ### 🚀 [▶️ Watch Full Workflow Execution Demo]
+> ([YOUR_LINKEDIN_LOOM_POST_URL](https://lnkd.in/p/dKH3Y9ui))
 > **Platform:** LinkedIn / Loom  
 > **What You'll See:** Real-time webhook ingestion ➔ Dual GHL API search ➔ Deterministic match decision ➔ CRM update ➔ 3-Tab Google Sheet audit logging.
 
