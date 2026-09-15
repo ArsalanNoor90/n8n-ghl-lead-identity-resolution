@@ -20,11 +20,11 @@ An automated end-to-end identity resolution engine built with n8n. It ingests in
 
 | Workflow Architecture | Dual GHL Search & Match Logic |
 | :---: | :---: |
-| ![n8n Workflow Canvas 1](screenshots/Screenshot%202026-09-15%20204057.png) <br> ![n8n Workflow Canvas 2](screenshots/Screenshot%202026-09-15%20201134.png) <br> ![n8n Workflow Canvas 3](screenshots/Screenshot%202026-09-15%20194428.png) | ![Identity Match Logic 1](screenshots/Screenshot%202026-09-15%20210509.png) <br> ![Identity Match Logic 2](screenshots/Screenshot%202026-09-15%20205238.png) <br> ![Identity Match Logic 3](screenshots/Screenshot%202026-09-15%20205059.png) |
+| <img src="./Screenshot%202026-09-15%20204057.png" width="100%" /><br><br><img src="./Screenshot%202026-09-15%20201134.png" width="100%" /><br><br><img src="./Screenshot%202026-09-15%20194428.png" width="100%" /> | <img src="./Screenshot%202026-09-15%20210509.png" width="100%" /><br><br><img src="./Screenshot%202026-09-15%20205238.png" width="100%" /><br><br><img src="./Screenshot%202026-09-15%20205059.png" width="100%" /> |
 
 | Centralized Master Database |
 | :---: |
-| ![Google Sheets Master Database 1](screenshots/Screenshot%202026-09-16%20010914.png) <br> ![Google Sheets Master Database 2](screenshots/Screenshot%202026-09-16%20010854.png) <br> ![Google Sheets Master Database 3](screenshots/Screenshot%202026-09-16%20010842.png) |
+| <img src="./Screenshot%202026-09-16%20010914.png" width="100%" /><br><br><img src="./Screenshot%202026-09-16%20010854.png" width="100%" /><br><br><img src="./Screenshot%202026-09-16%20010842.png" width="100%" /> |
 
 ---
 
