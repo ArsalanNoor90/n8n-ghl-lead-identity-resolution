@@ -1,0 +1,1154 @@
+{
+  "name": "Deterministic Cross-Source Lead Identity and Deduplication  (3)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "lead-webhook",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -1456,
+        -720
+      ],
+      "id": "a236ee99-f212-4486-8203-37f05df3f00b",
+      "name": "Lead Webhook",
+      "webhookId": "6cbff4cc-e604-47d0-ba6a-367bb0095d9c"
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\n\nreturn items.map(item => {\n  const body = item.json.body || {};\n  \n  // Dynamic Source Detection Logic\n  let detectedSource = body.source || \"unknown\";\n  \n  if (!body.source) {\n    if (body.call_id || body.message?.type) detectedSource = \"voice_agent\";\n    else if (body.lead_id) detectedSource = \"meta\";\n    else if (body.submission_id) detectedSource = \"website\";\n  }\n\n  return {\n    json: {\n      ...item.json,\n      source: detectedSource,\n      body: body\n    }\n  };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1280,
+        -720
+      ],
+      "id": "83ef62e5-54d5-4f38-b1e5-2cf291ee1c03",
+      "name": "Detect Source"
+    },
+    {
+      "parameters": {
+        "jsCode": "function normalizeEmail(value) {\n  if (!value) return \"\";\n  const email = String(value).trim().toLowerCase();\n  return email.includes(\"@\") ? email : \"\";\n}\n\nfunction normalizePhone(value) {\n  if (!value) return \"\";\n  let digits = String(value).replace(/\\D/g, \"\");\n\n  if (digits.length === 10) digits = \"1\" + digits;\n  if (digits.length < 11 || digits.length > 15) return \"\";\n\n  return \"+\" + digits;\n}\n\nreturn $input.all().map(item => {\n  const data = item.json;\n  const body = data.body || {};\n  const lead = body.lead || body; // Fallback for nested or flat payloads\n\n  // Extract raw fields across different source formats\n  const rawEmail = lead.email || lead.email_address || body.email || \"\";\n  const rawPhone = lead.phone || lead.phone_number || body.phone || body.caller?.phone || \"\";\n  const rawFirstName = lead.first_name || (lead.full_name ? lead.full_name.split(' ')[0] : \"\") || \"\";\n  const rawLastName = lead.last_name || (lead.full_name ? lead.full_name.split(' ').slice(1).join(' ') : \"\") || \"\";\n\n  return {\n    json: {\n      first_name: rawFirstName || null,\n      last_name: rawLastName || null,\n      normalized_email: normalizeEmail(rawEmail) || null,\n      normalized_phone: normalizePhone(rawPhone) || null,\n      company: lead.company || body.company || null,\n      source: data.source || \"unknown\",\n      source_record_id: data.source_record_id || null,\n      received_at: data.received_at || new Date().toISOString()\n    }\n  };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -880,
+        -720
+      ],
+      "id": "55537e7f-baf2-4a70-8b58-e33bc7ee7cc5",
+      "name": "Normalize to Canonical Lead"
+    },
+    {
+      "parameters": {
+        "jsCode": "return $input.all().map(item => {\n  const data = item.json;\n\n  const hasPhone = !!data.normalized_phone;\n  const hasEmail = !!data.normalized_email;\n  const hasSourceId = !!data.source_record_id;\n\n  const identityAvailable = hasPhone || hasEmail || hasSourceId;\n\n  // Document Step 3 Enforcement: Reject if no valid identity key exists\n  if (!identityAvailable) {\n    throw new Error(`Unusable Identity Data: Lead from '${data.source}' must have at least phone, email, or trusted source record ID.`);\n  }\n\n  return {\n    json: {\n      ...data,\n      identity_available: identityAvailable,\n      identity_fields: {\n        phone: hasPhone,\n        email: hasEmail,\n        source_record_id: hasSourceId\n      }\n    }\n  };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -688,
+        -720
+      ],
+      "id": "20f4b9fb-9a6d-4b31-b1b0-72202cd8d4de",
+      "name": "Validate Identity Fields"
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\n\nreturn items.map(item => {\n  const data = item.json;\n  \n  // Fallback to random/timestamp key if source_record_id is not present\n  const recordId = data.source_record_id || `generated_${Date.now()}`;\n  const source_idempotency_key = `${data.source}:${recordId}`;\n\n  return {\n    json: {\n      ...data,\n      source_idempotency_key\n    }\n  };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -512,
+        -720
+      ],
+      "id": "9895225b-d188-42bf-baaa-1cd6a96cbbd3",
+      "name": "Create Source Idempotency Key"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://services.leadconnectorhq.com/contacts/search",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer pit-dbc64df7-8871-4604-958e-e43c1d13724e"
+            },
+            {
+              "name": "Version",
+              "value": "2021-07-28"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"locationId\": \"saKiyepdR1cI6JAoFD72\",\n  \"page\": 1,\n  \"pageLimit\": 25,\n  \"filters\": [\n    {\n      \"field\": \"phone\",\n      \"operator\": \"eq\",\n      \"value\": \"{{ $json.normalized_phone }}\"\n    }\n  ]\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        208,
+        -880
+      ],
+      "id": "2c226736-7369-499c-864f-e9504be24867",
+      "name": "Search GHL by Phone",
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "return $input.all().map(item => {\n  const json = item.json;\n  const body = json.body || {};\n  const isVapi = json.source === \"voice_agent\" || json.source === \"vapi\";\n\n  let conversation = [];\n  let userMessages = [];\n\n  if (isVapi && json.vapi_message?.artifact?.messages) {\n    const messages = json.vapi_message.artifact.messages;\n    conversation = messages\n      .filter(m => (m.role === 'user' || m.role === 'bot') && m.message)\n      .map(m => ({\n        role: m.role === 'bot' ? 'assistant' : 'user',\n        message: m.message,\n        time: m.time || null,\n        secondsFromStart: m.secondsFromStart ?? null\n      }));\n\n    userMessages = conversation.filter(m => m.role === 'user').map(m => m.message);\n  }\n\n  return {\n    json: {\n      ...json,\n      source_record_id: body.lead?.source_record_id || body.submission_id || body.lead_id || body.call_id || body.external_id || null,\n      conversation,\n      user_messages: userMessages,\n      received_at: new Date().toISOString()\n    }\n  };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1072,
+        -720
+      ],
+      "id": "d2c069a3-4806-47e7-834c-4b6494b9c1cc",
+      "name": "Extract VAPI Customer Data"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://services.leadconnectorhq.com/contacts/search",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer pit-dbc64df7-8871-4604-958e-e43c1d13724e"
+            },
+            {
+              "name": "Version",
+              "value": "2021-07-28"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"locationId\": \"saKiyepdR1cI6JAoFD72\",\n  \"page\": 1,\n  \"pageLimit\": 25,\n  \"filters\": [\n    {\n      \"field\": \"email\",\n      \"operator\": \"eq\",\n      \"value\": \"{{$json.normalized_email}}\"\n    }\n  ]\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        208,
+        -704
+      ],
+      "id": "bf67d8ff-a097-4ec8-a38c-2a3f2d9cdf00",
+      "name": "Search GHL by Email"
+    },
+    {
+      "parameters": {
+        "numberInputs": 3
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        656,
+        -720
+      ],
+      "id": "675cf06d-7d3b-4908-bebb-7a00b1775f01",
+      "name": "Merge Search Results"
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "1lenv7VgfE8OslgYLt89e4e837wVicEsFHPDPslNnamc",
+          "mode": "list",
+          "cachedResultName": "Untitled spreGHL Lead Identity Resolution DBadsheet",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1lenv7VgfE8OslgYLt89e4e837wVicEsFHPDPslNnamc/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 959560994,
+          "mode": "list",
+          "cachedResultName": "Processing Log",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1lenv7VgfE8OslgYLt89e4e837wVicEsFHPDPslNnamc/edit#gid=959560994"
+        },
+        "filtersUI": {
+          "values": [
+            {
+              "lookupColumn": "idempotency_key",
+              "lookupValue": "={{ $json.source }}{{ $json.source_record_id }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        -352,
+        -720
+      ],
+      "id": "c977986b-50dd-4ee2-8d05-d5eb459916e8",
+      "name": "Check Idempotency",
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "gml6w6xc7PBsxQRc",
+          "name": "Google Sheets account 19"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "afe25b3a-b854-4fff-8d45-c71a8a5ae256",
+              "leftValue": "={{ Object.keys($json).length > 0 }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -192,
+        -720
+      ],
+      "id": "d8853b9e-e801-48cc-8809-e67f4a50e8d1",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first().json;\n\n// Directly pass-through decision calculated in consolidation step\nreturn [{\n  json: {\n    externalIdMatches: item.external_matches || [],\n    phoneMatches: item.phone_matches || [],\n    emailMatches: item.email_matches || [],\n    candidate_contact_ids: item.candidate_contact_ids || [],\n    candidate_contact_count: item.candidate_contact_count || 0,\n    identity_decision: item.identity_decision || 'create_new',\n    selected_contact_id: item.selected_contact_id || null,\n    ghl_contact_found: (item.candidate_contact_count || 0) > 0,\n    ghl_contact_count: item.candidate_contact_count || 0\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1040,
+        -704
+      ],
+      "id": "a2c08d83-d486-4e5c-a9f7-d0fb1ec478bb",
+      "name": "Evaluate GHL Match"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://services.leadconnectorhq.com/contacts/",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer pit-dbc64df7-8871-4604-958e-e43c1d13724e"
+            },
+            {
+              "name": "Version",
+              "value": "2021-07-28"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"locationId\": \"saKiyepdR1cI6JAoFD72\",\n  \"firstName\": \"{{ $('Resolve Original Lead Data').first().json.first_name }}\",\n  \"lastName\": \"{{ $('Resolve Original Lead Data').first().json.last_name }}\",\n  \"phone\": \"{{ $('Resolve Original Lead Data').first().json.normalized_phone }}\",\n  \"email\": \"{{ $('Resolve Original Lead Data').first().json.normalized_email }}\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1504,
+        -816
+      ],
+      "id": "78f5144f-4f74-4209-80a1-c06e8a0cba7b",
+      "name": "Create GHL Contact"
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\n\nreturn items.map(item => {\n  const data = item.json;\n  const contact = data.contact || {};\n  \n  return {\n    json: {\n      ...data, // Pass all original lead fields forward\n      ghl_contact_id: contact.id || null,\n      ghl_contact_created: !!contact.id,\n      ghl_contact: contact,\n      ghl_trace_id: data.traceId || null\n    }\n  };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1712,
+        -816
+      ],
+      "id": "0b0b106b-5475-4faf-ba14-8be2760c1f1b",
+      "name": "Prepare GHL Contact Result"
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "1lenv7VgfE8OslgYLt89e4e837wVicEsFHPDPslNnamc",
+          "mode": "list",
+          "cachedResultName": "Untitled spreGHL Lead Identity Resolution DBadsheet",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1lenv7VgfE8OslgYLt89e4e837wVicEsFHPDPslNnamc/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 959560994,
+          "mode": "list",
+          "cachedResultName": "Processing Log",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1lenv7VgfE8OslgYLt89e4e837wVicEsFHPDPslNnamc/edit#gid=959560994"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "idempotency_key": "={{ $('Resolve Original Lead Data').first().json.source }}:{{ $('Resolve Original Lead Data').first().json.source_record_id }}",
+            "record_id": "={{ $('Resolve Original Lead Data').first().json.source_record_id }}",
+            "processed_at": "={{ $now.toISO() }}",
+            "status": "={{ $json.status || 'processed' }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "idempotency_key",
+              "displayName": "idempotency_key",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "record_id",
+              "displayName": "record_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "processed_at",
+              "displayName": "processed_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1936,
+        -704
+      ],
+      "id": "51bb5599-9ef9-4079-8a88-1a58c0807f01",
+      "name": "Log Lead Processing",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "gml6w6xc7PBsxQRc",
+          "name": "Google Sheets account 19"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "=https://services.leadconnectorhq.com/contacts/{{ $json.selected_contact_id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer pit-dbc64df7-8871-4604-958e-e43c1d13724e"
+            },
+            {
+              "name": "Version",
+              "value": "2021-07-28"
+            },
+            {
+              "name": "Accept",
+              "value": "application/json"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"firstName\": \"{{ $('Resolve Original Lead Data').first().json.first_name }}\",\n  \"lastName\": \"{{ $('Resolve Original Lead Data').first().json.last_name }}\",\n  \"phone\": \"{{ $('Resolve Original Lead Data').first().json.normalized_phone || $('Resolve Original Lead Data').first().json.phone }}\",\n  \"email\": \"{{ $('Resolve Original Lead Data').first().json.normalized_email || $('Resolve Original Lead Data').first().json.email }}\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1504,
+        -608
+      ],
+      "id": "74b49c18-cb6b-420a-af12-245ea863a06c",
+      "name": "Update GHL Contact"
+    },
+    {
+      "parameters": {
+        "jsCode": "const contactId = $json.selected_contact_id || null;\n\nreturn {\n  json: {\n    ...$json,\n    ghl_contact_id: contactId,\n    ghl_contact_created: false,\n    ghl_contact: contactId\n      ? { id: contactId }\n      : null\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1712,
+        -608
+      ],
+      "id": "d223d3a9-8a1d-4586-9980-57d2fa6df77c",
+      "name": "Prepare Existing GHL Contact Result"
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "1lenv7VgfE8OslgYLt89e4e837wVicEsFHPDPslNnamc",
+          "mode": "list",
+          "cachedResultName": "Untitled spreGHL Lead Identity Resolution DBadsheet",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1lenv7VgfE8OslgYLt89e4e837wVicEsFHPDPslNnamc/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 45395957,
+          "mode": "list",
+          "cachedResultName": "Decision Log",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1lenv7VgfE8OslgYLt89e4e837wVicEsFHPDPslNnamc/edit#gid=45395957"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "idempotency_key": "={{ $('Resolve Original Lead Data').first().json.source }}:{{ $('Resolve Original Lead Data').first().json.source_record_id }}",
+            "processed_at": "={{ $now.toISO() }}",
+            "status": "={{ $('Evaluate GHL Match').first().json.identity_decision }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "idempotency_key",
+              "displayName": "idempotency_key",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "processed_at",
+              "displayName": "processed_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        2160,
+        -704
+      ],
+      "id": "af376b1e-67b2-4ccc-b115-4a48d5d30839",
+      "name": "Save Decision Log",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "gml6w6xc7PBsxQRc",
+          "name": "Google Sheets account 19"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"success\": true,\n  \"decision\": \"{{ $('Evaluate GHL Match').first().json.identity_decision }}\",\n  \"ghl_contact_id\": \"{{ $json.ghl_contact_id || $('Evaluate GHL Match').first().json.selected_contact_id || null }}\",\n  \"idempotency_key\": \"{{ $('Resolve Original Lead Data').first().json.source }}:{{ $('Resolve Original Lead Data').first().json.source_record_id }}\",\n  \"processed_at\": \"{{ new Date().toISOString() }}\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        2592,
+        -704
+      ],
+      "id": "54154f38-8e29-46d9-8197-ff07bbcfaac9",
+      "name": "Respond to Webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nlet matchedIds = [];\n\nfor (const item of items) {\n  // Extract contacts from GHL search response\n  const contacts = item.json.contacts || item.json.contacts || [];\n  for (const contact of contacts) {\n    if (contact.id) {\n      matchedIds.push(contact.id);\n    }\n  }\n}\n\nreturn [{\n  json: {\n    matched_ids: [...new Set(matchedIds)]\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        416,
+        -880
+      ],
+      "id": "2c81f2f9-cbbb-4ee5-8baf-cc7bba876941",
+      "name": "Prepare Phone Matches",
+      "retryOnFail": false,
+      "alwaysOutputData": false
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\n\nreturn items.map(item => {\n  const contacts = item.json.contacts || [];\n  const matches = contacts.map(c => c.id);\n  \n  return {\n    json: {\n      search_type: \"email\",\n      matched_ids: matches,\n      match_count: matches.length\n    }\n  };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        416,
+        -704
+      ],
+      "id": "01c23c2e-89ff-4e01-b3e3-689347334676",
+      "name": "Prepare Email Matches"
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "1lenv7VgfE8OslgYLt89e4e837wVicEsFHPDPslNnamc",
+          "mode": "list",
+          "cachedResultName": "Untitled spreGHL Lead Identity Resolution DBadsheet",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1lenv7VgfE8OslgYLt89e4e837wVicEsFHPDPslNnamc/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "External ID Mapping",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1lenv7VgfE8OslgYLt89e4e837wVicEsFHPDPslNnamc/edit#gid=0"
+        },
+        "filtersUI": {
+          "values": [
+            {
+              "lookupColumn": "source",
+              "lookupValue": "={{ $json.source }}"
+            },
+            {
+              "lookupColumn": "source_record_id",
+              "lookupValue": "={{ $json.source_record_id }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        208,
+        -496
+      ],
+      "id": "a8308051-ee77-4355-9b53-275717e33aa3",
+      "name": "Search External-ID Mapping",
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "gml6w6xc7PBsxQRc",
+          "name": "Google Sheets account 19"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\n\nconst externalIdMatches = items\n  .map(item => item.json.ghl_contact_id)\n  .filter(Boolean);\n\nreturn [\n  {\n    json: {\n      match_source: \"external_id\",\n      externalIdMatches\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        416,
+        -496
+      ],
+      "id": "5b711105-590e-4cb7-94c9-85d4f60414bd",
+      "name": "Prepare External-ID Matches"
+    },
+    {
+      "parameters": {
+        "jsCode": "return $input.all().map((item, index) => {\n  const originalItems = $('Create Source Idempotency Key').all();\n  const original = originalItems[index] ? originalItems[index].json : $('Create Source Idempotency Key').first().json;\n\n  return {\n    json: original\n  };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -32,
+        -704
+      ],
+      "id": "15aa9933-a3a9-4839-ab2f-146aeba00580",
+      "name": "Resolve Original Lead Data"
+    },
+    {
+      "parameters": {
+        "jsCode": "const phoneMatches = $('Prepare Phone Matches').first().json.matched_ids || [];\nconst emailMatches = $('Prepare Email Matches').first().json.matched_ids || [];\nconst externalMatches = $('Prepare External-ID Matches').first().json.matched_ids || [];\n\nconst allIds = [...new Set([...phoneMatches, ...emailMatches, ...externalMatches])];\n\nreturn [{\n  json: {\n    candidate_contact_ids: allIds,\n    candidate_contact_count: allIds.length,\n    identity_decision: allIds.length > 1 ? 'manual_review' : (allIds.length === 1 ? 'update_existing' : 'create_new'),\n    selected_contact_id: allIds.length === 1 ? allIds[0] : null,\n    phone_matches: phoneMatches,\n    email_matches: emailMatches,\n    external_matches: externalMatches\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        848,
+        -704
+      ],
+      "id": "bce76016-b2be-49c6-9ea2-44dcd7df1e8c",
+      "name": "Consolidate Candidate IDs",
+      "alwaysOutputData": false
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.identity_decision }}",
+                    "rightValue": "create_new",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "c5cc3708-6421-411c-a38c-7115fd82e979"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Create New Lead"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "109dfc59-4343-49a9-8143-130dd83e3026",
+                    "leftValue": "={{ $json.identity_decision }}",
+                    "rightValue": "manual_review",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Flag Conflict"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "0e94abfc-d8c6-4227-b9d5-f062547bdf11",
+                    "leftValue": "={{ $json.identity_decision }}",
+                    "rightValue": "update_existing",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Update Existing Lead"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        1216,
+        -720
+      ],
+      "id": "bfabc463-b089-4f2b-971a-b27a1afc1e6b",
+      "name": "Switch"
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "1lenv7VgfE8OslgYLt89e4e837wVicEsFHPDPslNnamc",
+          "mode": "list",
+          "cachedResultName": "Untitled spreGHL Lead Identity Resolution DBadsheet",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1lenv7VgfE8OslgYLt89e4e837wVicEsFHPDPslNnamc/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "External ID Mapping",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1lenv7VgfE8OslgYLt89e4e837wVicEsFHPDPslNnamc/edit#gid=0"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "source": "={{ $('Resolve Original Lead Data').first().json.source }}",
+            "source_record_id": "={{ $('Resolve Original Lead Data').first().json.source_record_id }}",
+            "ghl_contact_id": "={{ \n  (() => {\n    try { return $('Prepare Existing Contact Result').first().json.ghl_contact_id; } catch(e) {}\n    try { return $('Prepare GHL Contact Result').first().json.ghl_contact_id; } catch(e) {}\n    try { return $('Evaluate GHL Match').first().json.selected_contact_id; } catch(e) {}\n    return \"\";\n  })() \n}}",
+            "created_at": "={{ $now.toISO() }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "source",
+              "displayName": "source",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "source_record_id",
+              "displayName": "source_record_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "ghl_contact_id",
+              "displayName": "ghl_contact_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "created_at",
+              "displayName": "created_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        2384,
+        -704
+      ],
+      "id": "314078d6-c1fc-4f6a-88cc-3c382e57aff2",
+      "name": "Save External-ID Mapping",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "gml6w6xc7PBsxQRc",
+          "name": "Google Sheets account 19"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Lead Webhook": {
+      "main": [
+        [
+          {
+            "node": "Detect Source",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Detect Source": {
+      "main": [
+        [
+          {
+            "node": "Extract VAPI Customer Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize to Canonical Lead": {
+      "main": [
+        [
+          {
+            "node": "Validate Identity Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Identity Fields": {
+      "main": [
+        [
+          {
+            "node": "Create Source Idempotency Key",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Source Idempotency Key": {
+      "main": [
+        [
+          {
+            "node": "Check Idempotency",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract VAPI Customer Data": {
+      "main": [
+        [
+          {
+            "node": "Normalize to Canonical Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search GHL by Phone": {
+      "main": [
+        [
+          {
+            "node": "Prepare Phone Matches",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search GHL by Email": {
+      "main": [
+        [
+          {
+            "node": "Prepare Email Matches",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Search Results": {
+      "main": [
+        [
+          {
+            "node": "Consolidate Candidate IDs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Idempotency": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Resolve Original Lead Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Evaluate GHL Match": {
+      "main": [
+        [
+          {
+            "node": "Switch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create GHL Contact": {
+      "main": [
+        [
+          {
+            "node": "Prepare GHL Contact Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare GHL Contact Result": {
+      "main": [
+        [
+          {
+            "node": "Log Lead Processing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Lead Processing": {
+      "main": [
+        [
+          {
+            "node": "Save Decision Log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update GHL Contact": {
+      "main": [
+        [
+          {
+            "node": "Prepare Existing GHL Contact Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Existing GHL Contact Result": {
+      "main": [
+        [
+          {
+            "node": "Log Lead Processing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Decision Log": {
+      "main": [
+        [
+          {
+            "node": "Save External-ID Mapping",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Phone Matches": {
+      "main": [
+        [
+          {
+            "node": "Merge Search Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Email Matches": {
+      "main": [
+        [
+          {
+            "node": "Merge Search Results",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Search External-ID Mapping": {
+      "main": [
+        [
+          {
+            "node": "Prepare External-ID Matches",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare External-ID Matches": {
+      "main": [
+        [
+          {
+            "node": "Merge Search Results",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "Resolve Original Lead Data": {
+      "main": [
+        [
+          {
+            "node": "Search GHL by Phone",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Search GHL by Email",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Search External-ID Mapping",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Consolidate Candidate IDs": {
+      "main": [
+        [
+          {
+            "node": "Evaluate GHL Match",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch": {
+      "main": [
+        [
+          {
+            "node": "Create GHL Contact",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log Lead Processing",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Update GHL Contact",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save External-ID Mapping": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false,
+    "timeSavedMode": "fixed",
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all",
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "versionId": "5c00c1c6-01f9-4659-b95a-35c7afc7bcfb",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "36e5b8acffef6d9e199c770a496fc034332fcb50e464bcb97692c27f5a41e6f9"
+  },
+  "nodeGroups": [],
+  "id": "eIStDwo3Wmsi5YhO",
+  "tags": []
+}
